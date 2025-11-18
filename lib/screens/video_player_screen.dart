@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:better_player/better_player.dart';
+import 'package:video_player/video_player.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,16 +12,16 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
-  BetterPlayerController? _betterPlayerController;
+  VideoPlayerController? _videoPlayerController;
   List<String> _videoUrls = [];
   int _currentVideoIndex = 0;
   bool _isControlsVisible = true;
   bool _isFullscreen = false;
+  bool _isPlaying = false;
 
   @override
   void initState() {
     super.initState();
-    _initializePlayer();
     _loadSavedVideos();
     _requestPermissions();
   }
@@ -49,6 +49,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         _videoUrls = savedUrls;
       });
     }
+    
+    if (_videoUrls.isNotEmpty) {
+      _initializePlayer();
+    }
   }
 
   Future<void> _saveVideos() async {
@@ -58,29 +62,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   void _initializePlayer() {
     if (_videoUrls.isNotEmpty) {
-      _betterPlayerController = BetterPlayerController(
-        BetterPlayerConfiguration(
-          autoPlay: false,
-          looping: false,
-          aspectRatio: 16 / 9,
-          fit: BoxFit.contain,
-          controlsConfiguration: BetterPlayerControlsConfiguration(
-            enableControls: true,
-            enablePlayPause: true,
-            enableMute: true,
-            enableFullscreen: true,
-            enableProgressText: true,
-            enableSkips: true,
-            enableOverflowMenu: true,
-            controlBarColor: Colors.black54,
-            progressBarPlayedColor: Colors.red,
-            progressBarHandleColor: Colors.red,
-            progressBarBufferedColor: Colors.white24,
-            progressBarBackgroundColor: Colors.white12,
-          ),
-        ),
-      );
-      _playVideo(_currentVideoIndex);
+      _videoPlayerController?.dispose();
+      _videoPlayerController = VideoPlayerController.networkUrl(
+        Uri.parse(_videoUrls[_currentVideoIndex]),
+      )..initialize().then((_) {
+          setState(() {});
+          _videoPlayerController?.play();
+          _isPlaying = true;
+        });
     }
   }
 
@@ -90,18 +79,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         _currentVideoIndex = index;
       });
       
-      BetterPlayerDataSource dataSource = BetterPlayerDataSource(
-        BetterPlayerDataSourceType.network,
-        _videoUrls[index],
-        cacheConfiguration: BetterPlayerCacheConfiguration(
-          useCache: true,
-          preCacheSize: 10 * 1024 * 1024, // 10MB
-          maxCacheSize: 100 * 1024 * 1024, // 100MB
-          maxCacheFileSize: 50 * 1024 * 1024, // 50MB
-        ),
-      );
-      
-      _betterPlayerController?.setupDataSource(dataSource);
+      _videoPlayerController?.dispose();
+      _videoPlayerController = VideoPlayerController.networkUrl(
+        Uri.parse(_videoUrls[index]),
+      )..initialize().then((_) {
+          setState(() {});
+          _videoPlayerController?.play();
+          _isPlaying = true;
+        });
     }
   }
 
@@ -179,18 +164,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
-  void _toggleControls() {
-    setState(() {
-      _isControlsVisible = !_isControlsVisible;
-    });
-    _betterPlayerController?.setControlsVisibility(_isControlsVisible);
+  void _togglePlayPause() {
+    if (_videoPlayerController != null) {
+      if (_isPlaying) {
+        _videoPlayerController!.pause();
+      } else {
+        _videoPlayerController!.play();
+      }
+      setState(() {
+        _isPlaying = !_isPlaying;
+      });
+    }
   }
 
   void _toggleFullscreen() {
     setState(() {
       _isFullscreen = !_isFullscreen;
     });
-    _betterPlayerController?.toggleFullScreen();
   }
 
   @override
@@ -218,7 +208,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         ],
       ),
       body: GestureDetector(
-        onTap: _toggleControls,
+        onTap: () {
+          setState(() {
+            _isControlsVisible = !_isControlsVisible;
+          });
+        },
         child: Column(
           children: [
             // Video Player
@@ -226,8 +220,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               flex: 3,
               child: Container(
                 color: Colors.black,
-                child: _betterPlayerController != null
-                    ? BetterPlayer(controller: _betterPlayerController!)
+                child: _videoPlayerController != null &&
+                        _videoPlayerController!.value.isInitialized
+                    ? AspectRatio(
+                        aspectRatio: _videoPlayerController!.value.aspectRatio,
+                        child: VideoPlayer(_videoPlayerController!),
+                      )
                     : const Center(
                         child: CircularProgressIndicator(color: Colors.white),
                       ),
@@ -265,10 +263,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                           iconSize: 32,
                         ),
                         IconButton(
-                          onPressed: () {
-                            _betterPlayerController?.playPause();
-                          },
-                          icon: const Icon(Icons.play_arrow),
+                          onPressed: _togglePlayPause,
+                          icon: Icon(
+                            _isPlaying ? Icons.pause : Icons.play_arrow,
+                          ),
                           color: Colors.white,
                           iconSize: 48,
                         ),
@@ -396,7 +394,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
-    _betterPlayerController?.dispose();
+    _videoPlayerController?.dispose();
     super.dispose();
   }
 }
